@@ -8,8 +8,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
@@ -60,23 +58,25 @@
                 setIsProcessing(true);
                 setProgress(0);
                 const allData = [];
+                let currentGlobalNumber = 1;
 
                 try {
                     for (let i = 0; i < targetImages.length; i++) {
                         const img = targetImages[i];
                         const base64 = await toBase64(img.file);
-                        const text = await callGeminiAPI(base64);
+                        const text = await callGeminiAPI(base64, currentGlobalNumber);
                         
                         const lines = text.split('\n')
                                           .map(l => l.replace(/^[*\-\s\d.]+/, '').trim())
                                           .filter(l => l.length > 0);
                         
                         allData.push({ id: img.id, names: lines });
+                        currentGlobalNumber += lines.length;
                         setProgress(Math.round(((i + 1) / targetImages.length) * 100));
                     }
                     setResults(allData);
                 } catch (err) {
-                    setError("识别失败: " + err.message);
+                    setError("接口请求失败: " + err.message + "。请检查网络连接或稍后再试。");
                 } finally {
                     setIsProcessing(false);
                 }
@@ -89,12 +89,19 @@
                 reader.onerror = error => reject(error);
             });
 
-            const callGeminiAPI = async (base64Data) => {
+            const callGeminiAPI = async (base64Data, startNum) => {
+                // 使用更稳定的 gemini-1.5-flash 模型
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${SHARED_API_KEY}`;
+                
+                const prompt = `你是一个高精度的文字识别专家。任务：
+                1. 识别图片中的所有方案标题文字。
+                2. 每行文字前必须加上 "方案{n}_" 前缀，{n} 从 ${startNum} 开始递增。
+                3. 只返回识别后的列表，不要包含任何多余的解释。`;
+
                 const payload = {
                     contents: [{
                         parts: [
-                            { text: "识别图片中的所有方案标题。只返回列表，每行一个。" },
+                            { text: prompt },
                             { inlineData: { mimeType: "image/png", data: base64Data } }
                         ]
                     }]
@@ -118,23 +125,23 @@
                 <div className="max-w-6xl mx-auto p-6 md:p-12">
                     <header className="flex flex-col md:flex-row justify-between items-center mb-10 gap-6">
                         <div className="flex items-center gap-4">
-                            <div className="bg-blue-600 p-3 rounded-2xl shadow-lg">
+                            <div className="bg-blue-600 p-3 rounded-2xl shadow-lg shadow-blue-200">
                                 <LucideIcon d="M4 6h16M4 12h16M4 18h7" size={24} className="text-white" />
                             </div>
                             <div>
                                 <h1 className="text-2xl font-black text-slate-800 tracking-tight uppercase">Auto Namer <span className="text-blue-600">Pro</span></h1>
                                 <div className="flex items-center gap-1.5 mt-1">
                                     <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">AI Service Online</p>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">共享版 · 云端识别已就绪</p>
                                 </div>
                             </div>
                         </div>
-                        {/* 移除了 API Key 输入框 */}
                     </header>
 
                     {error && (
-                        <div className="mb-8 bg-red-50 border-l-4 border-red-500 p-4 rounded-r-xl text-red-700 text-sm font-bold shadow-md">
-                            {error}
+                        <div className="mb-8 bg-red-50 border-l-4 border-red-500 p-4 rounded-xl text-red-700 text-sm shadow-sm flex items-start gap-3">
+                            <span className="mt-0.5">⚠️</span>
+                            <p className="font-medium">{error}</p>
                         </div>
                     )}
 
@@ -142,23 +149,29 @@
                         <div className="space-y-6">
                             <div 
                                 onClick={() => document.getElementById('u-file').click()}
-                                className="h-80 border-4 border-dashed border-slate-200 rounded-[2.5rem] bg-white flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50 hover:border-blue-200 transition-all group"
+                                className="h-80 border-4 border-dashed border-slate-200 rounded-[2.5rem] bg-white flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50 hover:border-blue-200 transition-all group shadow-sm"
                             >
                                 <input type="file" id="u-file" hidden multiple onChange={handleFileChange} />
                                 <div className="bg-blue-100 p-6 rounded-full text-blue-600 mb-4 group-hover:scale-110 transition-transform shadow-inner">
                                     <LucideIcon d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" size={32} />
                                 </div>
-                                <p className="font-bold text-slate-600">直接上传或拖拽截图</p>
-                                <p className="text-slate-400 text-xs mt-2 uppercase tracking-tighter">无需配置 Key，已预设共享服务</p>
+                                <p className="font-bold text-slate-600">点击或拖拽上传截图</p>
+                                <p className="text-slate-400 text-xs mt-2 uppercase tracking-tighter">AI 共享密钥已内置，直接使用即可</p>
                             </div>
 
                             {images.length > 0 && (
                                 <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
-                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">当前队列 ({images.length})</h3>
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">待处理队列 ({images.length})</h3>
+                                        <button onClick={() => {setImages([]); setResults([]);}} className="text-[10px] text-slate-300 hover:text-red-500 font-bold uppercase tracking-tighter">清空</button>
+                                    </div>
                                     <div className="grid grid-cols-4 gap-3">
-                                        {images.map(img => (
-                                            <div key={img.id} className="aspect-square rounded-2xl overflow-hidden border border-slate-100 shadow-sm">
+                                        {images.map((img, idx) => (
+                                            <div key={img.id} className="relative aspect-square rounded-2xl overflow-hidden border border-slate-100 shadow-sm group">
                                                 <img src={img.preview} className="w-full h-full object-cover" />
+                                                <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                                    <span className="text-white text-[10px] font-bold bg-black/50 px-2 py-0.5 rounded-full">#{idx+1}</span>
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
@@ -168,41 +181,66 @@
 
                         <div className="flex flex-col min-h-[400px]">
                             {isProcessing ? (
-                                <div className="bg-white rounded-[2.5rem] flex-1 border border-slate-200 p-12 flex flex-col items-center justify-center text-center shadow-inner">
-                                    <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-6"></div>
-                                    <h2 className="text-xl font-bold text-slate-800">AI 正在拼命识别...</h2>
-                                    <p className="text-slate-400 mt-2 text-sm">{progress}% 已完成</p>
+                                <div className="bg-white rounded-[2.5rem] flex-1 border border-slate-200 p-12 flex flex-col items-center justify-center text-center shadow-sm">
+                                    <div className="relative w-16 h-16 mb-6">
+                                        <div className="absolute inset-0 border-4 border-blue-100 rounded-full"></div>
+                                        <div className="absolute inset-0 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                                    </div>
+                                    <h2 className="text-xl font-bold text-slate-800">AI 正在识别文字...</h2>
+                                    <p className="text-slate-400 mt-2 text-sm">正在处理第 {Math.ceil((progress/100)*images.length) || 1} 张图片</p>
+                                    <div className="w-48 h-1.5 bg-slate-100 rounded-full mt-6 overflow-hidden">
+                                        <div className="h-full bg-blue-600 transition-all duration-300" style={{width: `${progress}%`}}></div>
+                                    </div>
                                 </div>
                             ) : results.length > 0 ? (
                                 <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden flex flex-col h-full max-h-[600px]">
-                                    <div className="p-6 bg-slate-50 border-b flex justify-between items-center">
-                                        <h2 className="font-black text-slate-800 text-sm tracking-widest uppercase">识别结果</h2>
+                                    <div className="p-6 bg-slate-50/50 border-b flex justify-between items-center">
+                                        <div>
+                                            <h2 className="font-black text-slate-800 text-sm tracking-widest uppercase">识别结果</h2>
+                                            <p className="text-[10px] text-slate-400 font-bold mt-0.5">已自动添加方案前缀并排序</p>
+                                        </div>
                                         <button 
                                             onClick={() => {
                                                 const text = results.flatMap(r => r.names).join('\n');
-                                                navigator.clipboard.writeText(text);
+                                                const el = document.createElement('textarea');
+                                                el.value = text; document.body.appendChild(el);
+                                                el.select(); document.execCommand('copy');
+                                                document.body.removeChild(el);
                                                 alert("✨ 已复制到剪贴板");
                                             }}
-                                            className="text-xs bg-blue-600 text-white px-5 py-2 rounded-xl font-black hover:bg-blue-700 transition-all shadow-lg"
+                                            className="text-xs bg-blue-600 text-white px-5 py-2.5 rounded-xl font-black hover:bg-blue-700 transition-all shadow-lg active:scale-95"
                                         >
-                                            一键复制
+                                            一键复制全文
                                         </button>
                                     </div>
-                                    <div className="p-6 overflow-y-auto space-y-4 custom-scrollbar">
+                                    <div className="p-6 overflow-y-auto space-y-6 custom-scrollbar">
                                         {results.map((res, idx) => (
-                                            <div key={res.id} className="border-l-2 border-blue-100 pl-4 py-2">
-                                                <p className="text-[10px] font-black text-blue-500 mb-2 uppercase">Image #{idx+1}</p>
-                                                {res.names.map((name, nidx) => (
-                                                    <div key={nidx} className="bg-slate-50 p-3 rounded-xl mb-2 font-mono text-sm text-slate-700 border border-slate-100">
-                                                        {name}
-                                                    </div>
-                                                ))}
+                                            <div key={res.id} className="space-y-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">来自图片 #{idx+1}</p>
+                                                </div>
+                                                <div className="grid gap-2">
+                                                    {res.names.map((name, nidx) => (
+                                                        <div key={nidx} className="bg-slate-50 p-3 rounded-xl font-mono text-sm text-slate-700 border border-slate-100 flex items-center justify-between group">
+                                                            <span className="truncate pr-4">{name}</span>
+                                                            <button 
+                                                                onClick={() => {
+                                                                    navigator.clipboard.writeText(name);
+                                                                }}
+                                                                className="opacity-0 group-hover:opacity-100 text-blue-500 transition-opacity"
+                                                            >
+                                                                <LucideIcon d="M8 16H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2M16 8h2a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2v-2" size={14} />
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
                                 </div>
                             ) : (
-                                <div className="bg-white rounded-[2.5rem] flex-1 border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-300">
+                                <div className="bg-white rounded-[2.5rem] flex-1 border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-300 py-20">
                                     <LucideIcon d="M9 17v-2a4 4 0 0 1 4-4h2" size={48} className="mb-4 opacity-10" />
                                     <p className="font-black text-xs tracking-widest uppercase">等待数据处理</p>
                                 </div>
