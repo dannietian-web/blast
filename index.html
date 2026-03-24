@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 智能截图命名工具 - GitHub 部署版</title>
+    <title>AI 智能截图命名工具 - 共享版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -14,47 +14,38 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
         body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #f8fafc; }
-        .glass-panel { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.3); }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
     </style>
 </head>
 <body>
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState } = React;
 
-        // 简易图标组件
-        const LucideIcon = ({ d, size = 20 }) => (
-            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        // 硬编码 API Key，这样任何人打开网页都能直接使用
+        const SHARED_API_KEY = "AIzaSyBVCsVEJZXKaF1hb-B6ncmCvp5_ReSaQzY";
+
+        const LucideIcon = ({ d, size = 20, className = "" }) => (
+            <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
                 <path d={d} />
             </svg>
         );
 
         function App() {
-            const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_api_key') || "");
             const [images, setImages] = useState([]);
             const [isProcessing, setIsProcessing] = useState(false);
             const [results, setResults] = useState([]);
             const [error, setError] = useState(null);
             const [progress, setProgress] = useState(0);
 
-            // 监听 Key 变化并保存
-            const handleKeyChange = (e) => {
-                const val = e.target.value.trim();
-                setApiKey(val);
-                localStorage.setItem('gemini_api_key', val);
-            };
-
             const handleFileChange = async (e) => {
                 const files = Array.from(e.target.files);
                 if (files.length === 0) return;
                 
                 setError(null);
-                if (!apiKey) {
-                    setError("⚠️ 请先输入您的 Gemini API Key 才能开始识别。");
-                    return;
-                }
-
                 const newImages = files.map(file => ({
                     file,
                     preview: URL.createObjectURL(file),
@@ -74,8 +65,8 @@
                     for (let i = 0; i < targetImages.length; i++) {
                         const img = targetImages[i];
                         const base64 = await toBase64(img.file);
-                        
                         const text = await callGeminiAPI(base64);
+                        
                         const lines = text.split('\n')
                                           .map(l => l.replace(/^[*\-\s\d.]+/, '').trim())
                                           .filter(l => l.length > 0);
@@ -85,7 +76,7 @@
                     }
                     setResults(allData);
                 } catch (err) {
-                    setError("接口请求失败：" + err.message + "。请检查 Key 是否正确或网络是否可用。");
+                    setError("识别失败: " + err.message);
                 } finally {
                     setIsProcessing(false);
                 }
@@ -99,11 +90,11 @@
             });
 
             const callGeminiAPI = async (base64Data) => {
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${SHARED_API_KEY}`;
                 const payload = {
                     contents: [{
                         parts: [
-                            { text: "识别图片中的所有方案标题或主要文字。只返回文字列表，每行一个，不要有其他解释。" },
+                            { text: "识别图片中的所有方案标题。只返回列表，每行一个。" },
                             { inlineData: { mimeType: "image/png", data: base64Data } }
                         ]
                     }]
@@ -115,11 +106,7 @@
                     body: JSON.stringify(payload)
                 });
 
-                if (!resp.ok) {
-                    const errorJson = await resp.json();
-                    throw new Error(errorJson.error?.message || "未知错误");
-                }
-
+                if (!resp.ok) throw new Error("API 响应错误");
                 const data = await resp.json();
                 return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
             };
@@ -131,48 +118,42 @@
                             <div className="bg-blue-600 p-3 rounded-2xl shadow-lg">
                                 <LucideIcon d="M4 6h16M4 12h16M4 18h7" size={24} className="text-white" />
                             </div>
-                            <h1 className="text-2xl font-black text-slate-800 tracking-tight">AUTO NAMER <span className="text-blue-600">PRO</span></h1>
-                        </div>
-
-                        <div className="w-full md:w-auto">
-                            <input 
-                                type="password" 
-                                value={apiKey}
-                                onChange={handleKeyChange}
-                                placeholder="在此输入你的 Gemini API Key"
-                                className="w-full md:w-72 px-4 py-2 rounded-xl border-2 border-slate-200 focus:border-blue-500 outline-none text-sm transition-all"
-                            />
-                            <p className="text-[10px] text-slate-400 mt-1 text-right italic">* 密钥仅存在你的浏览器，不会上传</p>
+                            <div>
+                                <h1 className="text-2xl font-black text-slate-800 tracking-tight uppercase">Auto Namer <span className="text-blue-600">Pro</span></h1>
+                                <div className="flex items-center gap-1.5 mt-1">
+                                    <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">AI Service Online</p>
+                                </div>
+                            </div>
                         </div>
                     </header>
 
                     {error && (
-                        <div className="mb-8 bg-red-50 border-l-4 border-red-500 p-4 rounded-r-xl text-red-700 text-sm font-bold shadow-sm">
+                        <div className="mb-8 bg-red-50 border-l-4 border-red-500 p-4 rounded-r-xl text-red-700 text-sm font-bold shadow-md">
                             {error}
                         </div>
                     )}
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-                        {/* 左侧：上传区 */}
                         <div className="space-y-6">
                             <div 
                                 onClick={() => document.getElementById('u-file').click()}
                                 className="h-80 border-4 border-dashed border-slate-200 rounded-[2.5rem] bg-white flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50 hover:border-blue-200 transition-all group"
                             >
                                 <input type="file" id="u-file" hidden multiple onChange={handleFileChange} />
-                                <div className="bg-blue-100 p-6 rounded-full text-blue-600 mb-4 group-hover:scale-110 transition-transform">
+                                <div className="bg-blue-100 p-6 rounded-full text-blue-600 mb-4 group-hover:scale-110 transition-transform shadow-inner">
                                     <LucideIcon d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" size={32} />
                                 </div>
-                                <p className="font-bold text-slate-600">点击或拖拽上传截图</p>
-                                <p className="text-slate-400 text-xs mt-2">支持批量识别</p>
+                                <p className="font-bold text-slate-600">直接上传或拖拽截图</p>
+                                <p className="text-slate-400 text-xs mt-2 uppercase tracking-tighter">无需配置 Key，已预设共享服务</p>
                             </div>
 
                             {images.length > 0 && (
-                                <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100">
-                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">待处理队列 ({images.length})</h3>
+                                <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-100">
+                                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">当前队列 ({images.length})</h3>
                                     <div className="grid grid-cols-4 gap-3">
                                         {images.map(img => (
-                                            <div key={img.id} className="aspect-square rounded-xl overflow-hidden border border-slate-100">
+                                            <div key={img.id} className="aspect-square rounded-2xl overflow-hidden border border-slate-100 shadow-sm">
                                                 <img src={img.preview} className="w-full h-full object-cover" />
                                             </div>
                                         ))}
@@ -181,13 +162,12 @@
                             )}
                         </div>
 
-                        {/* 右侧：结果区 */}
-                        <div className="flex flex-col">
+                        <div className="flex flex-col min-h-[400px]">
                             {isProcessing ? (
-                                <div className="bg-white rounded-[2.5rem] flex-1 border border-slate-200 p-12 flex flex-col items-center justify-center text-center">
+                                <div className="bg-white rounded-[2.5rem] flex-1 border border-slate-200 p-12 flex flex-col items-center justify-center text-center shadow-inner">
                                     <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-6"></div>
-                                    <h2 className="text-xl font-bold text-slate-800">正在拼命识别中...</h2>
-                                    <p className="text-slate-400 mt-2">当前进度: {progress}%</p>
+                                    <h2 className="text-xl font-bold text-slate-800">AI 正在拼命识别...</h2>
+                                    <p className="text-slate-400 mt-2 text-sm">{progress}% 已完成</p>
                                 </div>
                             ) : results.length > 0 ? (
                                 <div className="bg-white rounded-[2.5rem] border border-slate-200 shadow-xl overflow-hidden flex flex-col h-full max-h-[600px]">
@@ -197,17 +177,17 @@
                                             onClick={() => {
                                                 const text = results.flatMap(r => r.names).join('\n');
                                                 navigator.clipboard.writeText(text);
-                                                alert("已复制到剪贴板");
+                                                alert("✨ 已复制到剪贴板");
                                             }}
-                                            className="text-xs bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700 transition-colors"
+                                            className="text-xs bg-blue-600 text-white px-5 py-2 rounded-xl font-black hover:bg-blue-700 transition-all shadow-lg"
                                         >
-                                            复制全部
+                                            一键复制
                                         </button>
                                     </div>
-                                    <div className="p-6 overflow-y-auto space-y-4">
+                                    <div className="p-6 overflow-y-auto space-y-4 custom-scrollbar">
                                         {results.map((res, idx) => (
-                                            <div key={res.id} className="border-b border-slate-50 pb-4">
-                                                <p className="text-[10px] font-bold text-blue-500 mb-2">IMAGE #{idx+1}</p>
+                                            <div key={res.id} className="border-l-2 border-blue-100 pl-4 py-2">
+                                                <p className="text-[10px] font-black text-blue-500 mb-2 uppercase">Image #{idx+1}</p>
                                                 {res.names.map((name, nidx) => (
                                                     <div key={nidx} className="bg-slate-50 p-3 rounded-xl mb-2 font-mono text-sm text-slate-700 border border-slate-100">
                                                         {name}
@@ -219,8 +199,8 @@
                                 </div>
                             ) : (
                                 <div className="bg-white rounded-[2.5rem] flex-1 border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-300">
-                                    <LucideIcon d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" size={48} className="mb-4 opacity-20" />
-                                    <p className="font-bold text-sm tracking-widest uppercase">等待数据处理</p>
+                                    <LucideIcon d="M9 17v-2a4 4 0 0 1 4-4h2" size={48} className="mb-4 opacity-10" />
+                                    <p className="font-black text-xs tracking-widest uppercase">等待数据处理</p>
                                 </div>
                             )}
                         </div>
