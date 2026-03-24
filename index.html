@@ -28,9 +28,6 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // --- 核心配置 ---
-        const apiKey = ""; 
-
         // 内部图标组件
         const Icon = ({ name, size = 18, className = "" }) => {
             const icons = {
@@ -76,6 +73,11 @@
                         <rect x="14" y="14" width="7" height="7" />
                         <rect x="3" y="14" width="7" height="7" />
                     </>
+                ),
+                'key': (
+                    <>
+                        <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3L15.5 7.5z" />
+                    </>
                 )
             };
 
@@ -98,13 +100,26 @@
         };
 
         function App() {
+            const [localApiKey, setLocalApiKey] = useState(localStorage.getItem('gemini_api_key') || "");
             const [images, setImages] = useState([]);
             const [processing, setProcessing] = useState(false);
             const [progress, setProgress] = useState(0);
             const [results, setResults] = useState([]);
             const [isExporting, setIsExporting] = useState(false);
+            const [errorMsg, setErrorMsg] = useState("");
+
+            // 保存 Key 到本地存储
+            const saveApiKey = (val) => {
+                setLocalApiKey(val);
+                localStorage.setItem('gemini_api_key', val);
+            };
 
             const handleFileChange = async (e) => {
+                if (!localApiKey) {
+                    setErrorMsg("请先在上方输入您的 Gemini API Key");
+                    return;
+                }
+                setErrorMsg("");
                 const files = Array.from(e.target.files);
                 if (files.length === 0) return;
 
@@ -129,12 +144,15 @@
 
             const callGemini = async (payload, attempt = 0) => {
                 try {
-                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${localApiKey}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
                     });
-                    if (!response.ok) throw new Error('API request failed');
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.error?.message || 'API request failed');
+                    }
                     const data = await response.json();
                     return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
                 } catch (err) {
@@ -189,6 +207,7 @@
                     }
                     setResults(allResults);
                 } catch (error) { 
+                    setErrorMsg("识别失败: " + error.message);
                     console.error(error);
                 } finally { 
                     setProcessing(false); 
@@ -229,17 +248,38 @@
             return (
                 <div className="min-h-screen text-slate-900 font-sans p-4 md:p-8">
                     <div className="max-w-6xl mx-auto">
-                        <header className="flex flex-col md:flex-row justify-between items-center mb-10 gap-4">
+                        <header className="flex flex-col md:flex-row justify-between items-start mb-8 gap-4">
                             <div className="flex items-center gap-4">
                                 <div className="bg-gradient-to-tr from-blue-600 to-indigo-600 p-3 rounded-2xl shadow-xl shadow-blue-100 flex items-center justify-center">
                                     <Icon name="list-ordered" className="text-white" size={28} />
                                 </div>
                                 <div>
-                                    <h1 className="text-2xl font-black tracking-tight text-slate-800 uppercase">Auto Namer Local</h1>
-                                    <p className="text-slate-500 text-xs font-bold tracking-widest uppercase">本地运行 · 智能排序 · 自动生成文件夹</p>
+                                    <h1 className="text-2xl font-black tracking-tight text-slate-800 uppercase">Auto Namer Online</h1>
+                                    <p className="text-slate-500 text-xs font-bold tracking-widest uppercase">网页部署版 · 智能识别 · 自动生成</p>
                                 </div>
                             </div>
+                            
+                            {/* API Key 设置区域 */}
+                            <div className="w-full md:w-auto flex flex-col gap-2">
+                                <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
+                                    <Icon name="key" className="text-slate-400" size={16} />
+                                    <input 
+                                        type="password" 
+                                        placeholder="输入 Gemini API Key" 
+                                        className="text-xs font-mono outline-none w-48 md:w-64"
+                                        value={localApiKey}
+                                        onChange={(e) => saveApiKey(e.target.value)}
+                                    />
+                                </div>
+                                <p className="text-[10px] text-slate-400 text-right font-medium italic">* Key 仅保存在您的浏览器本地，不会上传服务器</p>
+                            </div>
                         </header>
+
+                        {errorMsg && (
+                            <div className="mb-6 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-2xl text-sm font-bold flex items-center gap-2 animate-bounce">
+                                <span className="text-lg">⚠️</span> {errorMsg}
+                            </div>
+                        )}
 
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                             <div className="lg:col-span-5 space-y-6">
@@ -253,7 +293,7 @@
                                         <Icon name="upload" className="text-blue-600" size={40} />
                                     </div>
                                     <h3 className="font-bold text-lg">上传顺序截图</h3>
-                                    <p className="text-slate-400 text-sm mt-2 text-center px-4">上传后 AI 将自动开始识别并排序</p>
+                                    <p className="text-slate-400 text-sm mt-2 text-center px-4">支持多选，AI 将按文件顺序识别</p>
                                 </div>
 
                                 {images.length > 0 && (
@@ -263,7 +303,7 @@
                                              <Icon name="image" className="text-blue-500" size={16}/> 队列图片 ({images.length})
                                            </h4>
                                            {!processing && (
-                                             <button onClick={() => {setImages([]); setResults([]);}} className="text-slate-400 text-xs font-bold hover:text-red-500">清空</button>
+                                             <button onClick={() => {setImages([]); setResults([]);}} className="text-slate-400 text-xs font-bold hover:text-red-500 transition-colors">清空</button>
                                            )}
                                         </div>
                                         <div className="grid grid-cols-4 gap-3">
@@ -295,7 +335,7 @@
                                             <div className="absolute inset-0 flex items-center justify-center font-bold text-blue-600">{progress}%</div>
                                         </div>
                                         <h3 className="font-bold text-lg">正在智能识别并自动命名...</h3>
-                                        <p className="text-slate-400 text-sm italic">AI 正在按顺序解析图片内容，完成后即可编辑修改</p>
+                                        <p className="text-slate-400 text-sm italic">AI 正在按顺序解析图片内容，请耐心等待</p>
                                     </div>
                                 )}
 
@@ -315,8 +355,10 @@
                                                 el.value = text; document.body.appendChild(el);
                                                 el.select(); document.execCommand('copy');
                                                 document.body.removeChild(el);
+                                                setErrorMsg("复制成功！");
+                                                setTimeout(() => setErrorMsg(""), 2000);
                                               }}
-                                              className="bg-white border border-slate-200 text-blue-600 px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-blue-50 transition-all shadow-sm"
+                                              className="bg-white border border-slate-200 text-blue-600 px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 hover:bg-blue-50 transition-all shadow-sm active:scale-95"
                                             >
                                               <Icon name="copy" size={14}/> 复制全文
                                             </button>
